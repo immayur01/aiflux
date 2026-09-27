@@ -52,7 +52,9 @@ app.use(
         !origin ||
         allowedOrigins.includes(origin) ||
         (process.env.RAILWAY_PUBLIC_DOMAIN && origin.includes(process.env.RAILWAY_PUBLIC_DOMAIN)) ||
-        origin.endsWith('.up.railway.app')
+        origin.endsWith('.up.railway.app') ||
+        origin.endsWith('.onrender.com') ||
+        (process.env.RENDER_EXTERNAL_URL && origin.includes(process.env.RENDER_EXTERNAL_URL))
       ) {
         return cb(null, true);
       }
