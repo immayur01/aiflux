@@ -1,7 +1,11 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Upload, X, CheckCircle, AlertCircle } from 'lucide-react';
+import { Upload, CheckCircle, AlertCircle } from 'lucide-react';
+import { v4 as uuidv4 } from 'uuid';
+import { supabase } from '../supabase.js';
 import api from '../api/client.js';
 import { formatBytes } from '../utils/fileUtils.jsx';
+
+const BUCKET_NAME = 'flux-files';
 
 export default function DropZone({ folderId, onUploaded }) {
   const [dragging, setDragging] = useState(false);
@@ -23,27 +27,55 @@ export default function DropZone({ folderId, onUploaded }) {
     }));
     setUploads(prev => [...prev, ...items]);
 
-    // Upload each file individually for per-file progress
     for (const item of items) {
-      const form = new FormData();
-      form.append('files', item.file);
       try {
-        updateUpload(item.id, { status: 'uploading' });
-        await api.post(`/files/upload?folderId=${folderId}`, form, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-          onUploadProgress: e => {
-            const pct = Math.round((e.loaded * 100) / (e.total || 1));
-            updateUpload(item.id, { progress: pct });
-          },
+        updateUpload(item.id, { status: 'uploading', progress: 10 });
+
+        const fileId = uuidv4();
+        const safeName = item.name.replace(/[^a-zA-Z0-9.\-_() ]/g, '_');
+        const ext = safeName.lastIndexOf('.') !== -1 ? safeName.slice(safeName.lastIndexOf('.')) : '';
+        const base = safeName.slice(0, safeName.lastIndexOf('.') || safeName.length).slice(0, 80);
+        const storedName = `${fileId}_${base}${ext}`;
+        const storagePath = `uploads/${fileId}/${storedName}`;
+
+        // ── Step 1: Upload DIRECTLY from browser → Supabase Storage (no Render proxy) ──
+        let useCloudStorage = false;
+        let uploadedPath = null;
+
+        const { error: storageErr } = await supabase.storage
+          .from(BUCKET_NAME)
+          .upload(storagePath, item.file, {
+            contentType: item.file.type || 'application/octet-stream',
+            upsert: true,
+          });
+
+        if (!storageErr) {
+          useCloudStorage = true;
+          uploadedPath = storagePath;
+        }
+
+        updateUpload(item.id, { progress: 75 });
+
+        // ── Step 2: Register metadata in DB via backend (tiny JSON payload only) ──
+        await api.post('/files/register', {
+          fileId,
+          folderId,
+          originalName: safeName,
+          storedName,
+          storagePath: useCloudStorage ? uploadedPath : null,
+          mimeType: item.file.type || 'application/octet-stream',
+          sizeBytes: item.file.size,
         });
+
         updateUpload(item.id, { status: 'done', progress: 100 });
       } catch (err) {
-        const msg = err.response?.data?.error || 'Upload failed';
+        console.error('Upload error:', err);
+        const msg = err.response?.data?.error || err.message || 'Upload failed';
         updateUpload(item.id, { status: 'error', error: msg });
       }
     }
 
-    // After all done, notify parent
+    // Notify parent after all uploads
     setTimeout(() => {
       setUploads([]);
       onUploaded?.();
@@ -74,7 +106,7 @@ export default function DropZone({ folderId, onUploaded }) {
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: 12 }}>
             or <span style={{ color: 'var(--accent-light)', textDecoration: 'underline', cursor: 'pointer' }}>browse from your device</span>
           </p>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Supports all file formats up to storage quota</span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Supports all file formats — no size limit</span>
         </div>
       </div>
 
@@ -88,7 +120,7 @@ export default function DropZone({ folderId, onUploaded }) {
                 {u.status === 'done'  && <CheckCircle size={16} color="var(--success)" />}
                 {u.status === 'error' && <AlertCircle size={16} color="var(--danger)" />}
               </div>
-              {u.status === 'uploading' && (
+              {(u.status === 'uploading' || u.status === 'pending') && (
                 <div className="progress-bar-track">
                   <div className="progress-bar-fill" style={{ width: `${u.progress}%` }} />
                 </div>

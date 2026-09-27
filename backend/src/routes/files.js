@@ -101,7 +101,60 @@ router.get('/storage-info', async (_req, res, next) => {
   }
 });
 
-// ── POST /api/files/upload?folderId= ─────────────────────────────────────────
+// ── POST /api/files/register (Direct-to-Supabase upload, metadata registration only) ───
+// The browser uploads the file directly to Supabase Storage and then calls this endpoint
+// with just JSON metadata — no file binary passes through Render.
+router.post('/register', async (req, res, next) => {
+  try {
+    const supabase = getSupabase();
+    if (!isSupabaseReady() || !supabase) {
+      return res.status(503).json({ error: 'Supabase is not configured' });
+    }
+
+    const { fileId, folderId, originalName, storedName, storagePath, mimeType, sizeBytes } = req.body;
+
+    if (!fileId || !folderId || !originalName) {
+      return res.status(400).json({ error: 'fileId, folderId, and originalName are required' });
+    }
+
+    // Verify folder exists
+    const { data: folder } = await supabase.from('folders').select('id').eq('id', folderId).single();
+    if (!folder) return res.status(400).json({ error: 'Target folder not found' });
+
+    // Check quota
+    const used = await getUsedBytes(supabase);
+    const quota = await getQuotaBytes(supabase);
+    if (used + Number(sizeBytes || 0) > quota) {
+      const availMb = ((quota - used) / 1024 / 1024).toFixed(1);
+      return res.status(413).json({ error: `Storage quota exceeded. ${availMb} MB available.` });
+    }
+
+    const now = new Date().toISOString();
+    const safeName = sanitize(originalName) || originalName;
+
+    const fileRecord = {
+      id: fileId,
+      folder_id: folderId,
+      original_name: safeName,
+      stored_name: storedName || safeName,
+      storage_path: storagePath || null,
+      mime_type: mimeType || 'application/octet-stream',
+      size_bytes: Number(sizeBytes || 0),
+      created_at: now,
+      updated_at: now,
+    };
+
+    const { error: insertErr } = await supabase.from('files').insert(fileRecord);
+    if (insertErr) throw insertErr;
+
+    await logActivity('FILE_UPLOAD', `Uploaded "${safeName}" to folder ${folderId} (direct)`, req.ip);
+    res.status(201).json({ id: fileId, original_name: safeName, size_bytes: Number(sizeBytes) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /api/files/upload?folderId= (Legacy: files pass through Render) ─────
 router.post('/upload', (req, res) => {
   const { folderId } = req.query;
   if (!folderId) return res.status(400).json({ error: 'folderId required' });
