@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   Home, FolderOpen, Settings, LogOut,
-  ChevronRight, ChevronDown, Plus, Cloud, HardDrive
+  ChevronRight, ChevronDown, Plus, Cloud, HardDrive,
+  Menu, X
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -51,6 +52,7 @@ export default function AppLayout() {
   const location = useLocation();
   const [folders, setFolders] = useState([]);
   const [storage, setStorage] = useState(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const activeFolderId = location.pathname.startsWith('/folder/')
     ? location.pathname.replace('/folder/', '')
@@ -73,8 +75,12 @@ export default function AppLayout() {
   useEffect(() => {
     loadFolders();
     loadStorage();
-    // Refresh storage on navigation
   }, [location.pathname, loadFolders, loadStorage]);
+
+  // Close mobile drawer on route navigation
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
 
   const handleLogout = async () => {
     await logout();
@@ -87,16 +93,58 @@ export default function AppLayout() {
 
   return (
     <div className="app-layout">
-      {/* ── Sidebar ── */}
-      <aside className="sidebar">
+      {/* ── Mobile Top Header Bar ── */}
+      <header className="mobile-header">
+        <button
+          className="mobile-menu-trigger"
+          onClick={() => setMobileMenuOpen(o => !o)}
+          aria-label="Toggle navigation menu"
+        >
+          {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
+
+        <div className="mobile-header-brand" onClick={() => navigate('/')}>
+          <div className="logo-icon small">
+            <Cloud size={15} color="#fff" />
+          </div>
+          <span className="logo-text">Flux</span>
+        </div>
+
+        <button
+          className="mobile-header-action"
+          onClick={() => navigate('/settings')}
+          aria-label="Settings"
+        >
+          <Settings size={18} />
+        </button>
+      </header>
+
+      {/* ── Mobile Backdrop Overlay ── */}
+      {mobileMenuOpen && (
+        <div
+          className="mobile-drawer-overlay"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* ── Sidebar (Desktop Fixed + Mobile Slide-In Drawer) ── */}
+      <aside className={`sidebar ${mobileMenuOpen ? 'mobile-open' : ''}`}>
         <div className="sidebar-logo">
           <div className="logo-icon">
             <Cloud size={18} color="#fff" />
           </div>
-          <div>
+          <div style={{ flex: 1 }}>
             <div className="logo-text">Flux</div>
             <div className="logo-sub">Personal Cloud</div>
           </div>
+          {/* Close button inside drawer for mobile */}
+          <button
+            className="mobile-drawer-close"
+            onClick={() => setMobileMenuOpen(false)}
+            aria-label="Close menu"
+          >
+            <X size={18} />
+          </button>
         </div>
 
         <nav className="sidebar-nav">
@@ -143,7 +191,7 @@ export default function AppLayout() {
         </div>
       </aside>
 
-      {/* ── Main ── */}
+      {/* ── Main Content ── */}
       <main className="main-content">
         <Outlet context={{ reloadFolders: loadFolders, reloadStorage: loadStorage }} />
       </main>
