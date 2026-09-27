@@ -31,39 +31,58 @@ export default function DropZone({ folderId, onUploaded }) {
       try {
         updateUpload(item.id, { status: 'uploading', progress: 5 });
 
-        // Step 1: Request pre-signed upload URL from our backend
-        // (Backend verifies folder + storage quota + creates authorized signed token)
+        // Step 1: Request pre-signed upload URL from backend
         const { data: ticket } = await api.post('/files/signed-upload-url', {
           folderId,
           originalName: item.name,
           sizeBytes: item.size,
         });
 
-        const { fileId, safeName, storedName, storagePath, token } = ticket;
+        const { fileId, safeName, storedName, storagePath, signedUrl, token } = ticket;
 
-        // Step 2: Upload file directly to Supabase using the signed upload URL / token
-        // Use supabase.storage.uploadToSignedUrl which handles authorization without bucket policies
-        updateUpload(item.id, { progress: 15 });
-
+        // Step 2: Upload file directly to Supabase with real-time percentage progress
         let useCloudStorage = false;
-        try {
+
+        if (signedUrl) {
+          // Use standard XMLHttpRequest to upload directly to Supabase signed URL with accurate progress tracking
+          await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('PUT', signedUrl, true);
+            xhr.setRequestHeader('Content-Type', item.file.type || 'application/octet-stream');
+
+            xhr.upload.onprogress = (evt) => {
+              if (evt.lengthComputable) {
+                const percent = Math.min(95, Math.round((evt.loaded / evt.total) * 90) + 5);
+                updateUpload(item.id, { progress: percent });
+              }
+            };
+
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                useCloudStorage = true;
+                resolve();
+              } else {
+                reject(new Error(`Storage rejected upload: HTTP ${xhr.status} ${xhr.responseText || xhr.statusText}`));
+              }
+            };
+
+            xhr.onerror = () => reject(new Error('Network error during file upload to Supabase storage'));
+            xhr.ontimeout = () => reject(new Error('Upload timed out'));
+            xhr.send(item.file);
+          });
+        } else {
+          // Fallback via uploadToSignedUrl
           const { error: uploadErr } = await supabase.storage
             .from(BUCKET_NAME)
             .uploadToSignedUrl(storagePath, token, item.file, {
               contentType: item.file.type || 'application/octet-stream',
               upsert: true,
             });
-
-          if (uploadErr) {
-            console.warn('uploadToSignedUrl warning:', uploadErr);
-          } else {
-            useCloudStorage = true;
-          }
-        } catch (sErr) {
-          console.warn('Signed upload error:', sErr);
+          if (uploadErr) throw uploadErr;
+          useCloudStorage = true;
         }
 
-        updateUpload(item.id, { progress: 85 });
+        updateUpload(item.id, { progress: 96 });
 
         // Step 3: Register file metadata in database
         await api.post('/files/register', {
@@ -80,7 +99,7 @@ export default function DropZone({ folderId, onUploaded }) {
       } catch (err) {
         console.error('Upload error:', err);
         const msg = err.response?.data?.error || err.message || 'Upload failed';
-        updateUpload(item.id, { status: 'error', error: msg });
+        updateUpload(item.id, { status: 'error', error: msg, progress: 0 });
       }
     }
 
@@ -125,16 +144,23 @@ export default function DropZone({ folderId, onUploaded }) {
             <div key={u.id} className="upload-item">
               <div className="upload-item-header">
                 <span className="upload-item-name">{u.name}</span>
-                <span className="upload-item-size">{formatBytes(u.size)}</span>
-                {u.status === 'done'  && <CheckCircle size={16} color="var(--success)" />}
-                {u.status === 'error' && <AlertCircle size={16} color="var(--danger)" />}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span className="upload-item-size">{formatBytes(u.size)}</span>
+                  {u.status === 'uploading' && (
+                    <span style={{ fontSize: '0.75rem', color: 'var(--accent-light)', fontWeight: 600 }}>
+                      {u.progress}%
+                    </span>
+                  )}
+                  {u.status === 'done'  && <CheckCircle size={16} color="var(--success)" />}
+                  {u.status === 'error' && <AlertCircle size={16} color="var(--danger)" />}
+                </div>
               </div>
               {(u.status === 'uploading' || u.status === 'pending') && (
                 <div className="progress-bar-track">
                   <div className="progress-bar-fill" style={{ width: `${u.progress}%` }} />
                 </div>
               )}
-              {u.error && <div style={{ fontSize:'0.75rem', color:'var(--danger)' }}>{u.error}</div>}
+              {u.error && <div style={{ fontSize:'0.75rem', color:'var(--danger)', marginTop: 2 }}>{u.error}</div>}
             </div>
           ))}
         </div>
