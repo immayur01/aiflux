@@ -2,7 +2,9 @@
 
 <div align="center">
 
-![Flux Banner](https://raw.githubusercontent.com/immayur01/aiflux/main/frontend/public/favicon.ico)
+<img src="./assets/banner.svg" alt="Flux Banner" width="100%" />
+
+<br/><br/>
 
 **An ultra-modern, liquid glassmorphism personal cloud storage platform with instant file streaming, hierarchical folders, and Supabase integration.**
 
@@ -15,6 +17,10 @@
 [![Uptime](https://img.shields.io/badge/Uptime-100%25%20Always--On-brightgreen?style=for-the-badge&logo=uptimerobot&logoColor=white)](https://aiflux.in)
 
 [🌐 View Live App (aiflux.in)](https://aiflux.in) · [Report Bug](https://github.com/immayur01/aiflux/issues) · [Request Feature](https://github.com/immayur01/aiflux/issues)
+
+<br/><br/>
+
+<img src="./assets/preview.png" alt="Flux Dashboard Preview" width="100%" style="border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.5);" />
 
 </div>
 
