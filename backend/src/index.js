@@ -42,21 +42,14 @@ app.use(
     },
     contentSecurityPolicy: {
       directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
-        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-        fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
-        imgSrc: ["'self'", 'data:', 'blob:', 'https://*.supabase.co', 'https://raw.githubusercontent.com'],
-        mediaSrc: ["'self'", 'blob:', 'data:', 'https://*.supabase.co'],
-        connectSrc: [
-          "'self'",
-          'https://*.supabase.co',
-          'wss://*.supabase.co',
-          'https://aiflux.in',
-          'https://www.aiflux.in',
-        ],
+        defaultSrc: ["'self'", '*'],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", '*'],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', '*'],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:', '*'],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https:', '*'],
+        mediaSrc: ["'self'", 'blob:', 'data:', 'https:', '*'],
+        connectSrc: ["'self'", 'https:', 'wss:', 'http:', 'ws:', '*'],
         objectSrc: ["'none'"],
-        frameAncestors: ["'none'"],
         baseUri: ["'self'"],
         formAction: ["'self'"],
       },
@@ -64,29 +57,14 @@ app.use(
   })
 );
 
-// ── Rate Limiters (DDoS & Brute Force Protection) ─────────────────────────────
-const globalApiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 400, // 400 requests per 15 min window
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests from this IP, please try again later.' },
-});
-
+// ── Rate Limiter (Brute-Force Login Protection Only) ─────────────────────────
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 30, // 30 auth requests per 15 min window
+  max: 50, // 50 attempts per 15 min window
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { trustProxy: false, xForwardedForHeader: false },
   message: { error: 'Too many authentication attempts. Please wait 15 minutes before trying again.' },
-});
-
-const uploadLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 60, // 60 upload requests per 15 min window
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Upload rate limit reached. Please wait a few minutes before uploading more.' },
 });
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
@@ -127,10 +105,8 @@ app.use(cookieParser());
 // ── Health Check (Excluded from rate limits for UptimeRobot) ─────────────────
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', provider: 'supabase' }));
 
-// ── API Routes with Rate Limiting ─────────────────────────────────────────────
-app.use('/api', globalApiLimiter);
+// ── API Routes ────────────────────────────────────────────────────────────────
 app.use('/api/auth', authLimiter, authRouter);
-app.use('/api/files/upload', uploadLimiter);
 app.use('/api/files', filesRouter);
 app.use('/api/folders', foldersRouter);
 app.use('/api/settings', settingsRouter);

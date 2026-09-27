@@ -49,12 +49,17 @@ export default function FolderPage() {
       // Subfolders from allFolders where parent_id === id
       const flat = flattenFolders(allFoldersRes.data);
       setSubfolders(flat.filter(f => f.parent_id === id));
-    } catch {
-      toast.error('Failed to load folder');
+    } catch (err) {
+      console.error('Failed to load folder:', err);
+      const msg = err.response?.data?.error || err.message || 'Failed to load folder';
+      toast.error(msg);
+      if (err.response?.status === 404) {
+        navigate('/');
+      }
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, navigate]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
