@@ -20,6 +20,8 @@ router.get('/status', async (_req, res) => {
     isSetup: true,
     isSupabaseConfigured: isSupabaseReady(),
     ownerEmail,
+    supabaseUrl: process.env.SUPABASE_URL || 'https://dbnntrkqayrotfovyfev.supabase.co',
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || 'sb_publishable_hnsigSRo0FnZO7rR_SrZvQ_bOg4UJqI',
   });
 });
 
