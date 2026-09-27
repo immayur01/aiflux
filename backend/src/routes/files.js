@@ -101,6 +101,63 @@ router.get('/storage-info', async (_req, res, next) => {
   }
 });
 
+// ── POST /api/files/signed-upload-url ─────────────────────────────────────────
+// Generates a pre-signed upload URL using the backend's admin/service key.
+// The browser uploads directly to Supabase via this URL — NO RLS policies needed on the bucket!
+router.post('/signed-upload-url', async (req, res, next) => {
+  try {
+    const supabase = getSupabase();
+    if (!isSupabaseReady() || !supabase) {
+      return res.status(503).json({ error: 'Supabase is not configured' });
+    }
+
+    const { folderId, originalName, sizeBytes } = req.body;
+    if (!folderId || !originalName) {
+      return res.status(400).json({ error: 'folderId and originalName are required' });
+    }
+
+    // Verify folder exists
+    const { data: folder } = await supabase.from('folders').select('id').eq('id', folderId).single();
+    if (!folder) return res.status(400).json({ error: 'Target folder not found' });
+
+    // Check quota
+    const used = await getUsedBytes(supabase);
+    const quota = await getQuotaBytes(supabase);
+    if (used + Number(sizeBytes || 0) > quota) {
+      const availMb = ((quota - used) / 1024 / 1024).toFixed(1);
+      return res.status(413).json({ error: `Storage quota exceeded. ${availMb} MB available.` });
+    }
+
+    const fileId = uuidv4();
+    const safeName = sanitize(originalName) || originalName;
+    const ext = path.extname(safeName);
+    const base = path.basename(safeName, ext).slice(0, 80);
+    const storedName = `${fileId}_${base}${ext}`;
+    const storagePath = `uploads/${fileId}/${storedName}`;
+
+    // Create a signed upload URL via Supabase Storage admin
+    const { data: signedData, error: signErr } = await supabase.storage
+      .from(BUCKET_NAME)
+      .createSignedUploadUrl(storagePath);
+
+    if (signErr) {
+      logger.error(`Failed to create signed upload url: ${signErr.message}`);
+      return res.status(500).json({ error: `Storage error: ${signErr.message}` });
+    }
+
+    res.json({
+      fileId,
+      safeName,
+      storedName,
+      storagePath,
+      signedUrl: signedData.signedUrl,
+      token: signedData.token,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── POST /api/files/register (Direct-to-Supabase upload, metadata registration only) ───
 // The browser uploads the file directly to Supabase Storage and then calls this endpoint
 // with just JSON metadata — no file binary passes through Render.

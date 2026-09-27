@@ -29,40 +29,49 @@ export default function DropZone({ folderId, onUploaded }) {
 
     for (const item of items) {
       try {
-        updateUpload(item.id, { status: 'uploading', progress: 10 });
+        updateUpload(item.id, { status: 'uploading', progress: 5 });
 
-        const fileId = uuidv4();
-        const safeName = item.name.replace(/[^a-zA-Z0-9.\-_() ]/g, '_');
-        const ext = safeName.lastIndexOf('.') !== -1 ? safeName.slice(safeName.lastIndexOf('.')) : '';
-        const base = safeName.slice(0, safeName.lastIndexOf('.') || safeName.length).slice(0, 80);
-        const storedName = `${fileId}_${base}${ext}`;
-        const storagePath = `uploads/${fileId}/${storedName}`;
+        // Step 1: Request pre-signed upload URL from our backend
+        // (Backend verifies folder + storage quota + creates authorized signed token)
+        const { data: ticket } = await api.post('/files/signed-upload-url', {
+          folderId,
+          originalName: item.name,
+          sizeBytes: item.size,
+        });
 
-        // ── Step 1: Upload DIRECTLY from browser → Supabase Storage (no Render proxy) ──
+        const { fileId, safeName, storedName, storagePath, token } = ticket;
+
+        // Step 2: Upload file directly to Supabase using the signed upload URL / token
+        // Use supabase.storage.uploadToSignedUrl which handles authorization without bucket policies
+        updateUpload(item.id, { progress: 15 });
+
         let useCloudStorage = false;
-        let uploadedPath = null;
+        try {
+          const { error: uploadErr } = await supabase.storage
+            .from(BUCKET_NAME)
+            .uploadToSignedUrl(storagePath, token, item.file, {
+              contentType: item.file.type || 'application/octet-stream',
+              upsert: true,
+            });
 
-        const { error: storageErr } = await supabase.storage
-          .from(BUCKET_NAME)
-          .upload(storagePath, item.file, {
-            contentType: item.file.type || 'application/octet-stream',
-            upsert: true,
-          });
-
-        if (!storageErr) {
-          useCloudStorage = true;
-          uploadedPath = storagePath;
+          if (uploadErr) {
+            console.warn('uploadToSignedUrl warning:', uploadErr);
+          } else {
+            useCloudStorage = true;
+          }
+        } catch (sErr) {
+          console.warn('Signed upload error:', sErr);
         }
 
-        updateUpload(item.id, { progress: 75 });
+        updateUpload(item.id, { progress: 85 });
 
-        // ── Step 2: Register metadata in DB via backend (tiny JSON payload only) ──
+        // Step 3: Register file metadata in database
         await api.post('/files/register', {
           fileId,
           folderId,
           originalName: safeName,
           storedName,
-          storagePath: useCloudStorage ? uploadedPath : null,
+          storagePath: useCloudStorage ? storagePath : null,
           mimeType: item.file.type || 'application/octet-stream',
           sizeBytes: item.file.size,
         });
