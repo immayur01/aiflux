@@ -13,6 +13,7 @@ dotenv.config();
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import cookieParser from 'cookie-parser';
 import { initSupabase } from './config/supabase.js';
 import { logger } from './utils/logger.js';
@@ -25,16 +26,43 @@ import { errorHandler } from './middleware/errorHandler.js';
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ── Trust proxy ───────────────────────────────────────────────────────────────
+// ── Trust proxy (required for Render / reverse proxies & accurate IP rate limiting)
 app.set('trust proxy', 1);
 
 // ── Security headers ──────────────────────────────────────────────────────────
 app.use(
   helmet({
-    crossOriginResourcePolicy: { policy: 'same-site' },
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     contentSecurityPolicy: false,
   })
 );
+
+// ── Rate Limiters (DDoS & Brute Force Protection) ─────────────────────────────
+const globalApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 400, // 400 requests per 15 min window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests from this IP, please try again later.' },
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30, // 30 auth requests per 15 min window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many authentication attempts. Please wait 15 minutes before trying again.' },
+});
+
+const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60, // 60 upload requests per 15 min window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Upload rate limit reached. Please wait a few minutes before uploading more.' },
+});
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 const allowedOrigins = [
@@ -71,14 +99,16 @@ app.use(
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 
-// ── API Routes ────────────────────────────────────────────────────────────────
-app.use('/api/auth', authRouter);
-app.use('/api/folders', foldersRouter);
-app.use('/api/files', filesRouter);
-app.use('/api/settings', settingsRouter);
-
-// ── Health Check ──────────────────────────────────────────────────────────────
+// ── Health Check (Excluded from rate limits for UptimeRobot) ─────────────────
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', provider: 'supabase' }));
+
+// ── API Routes with Rate Limiting ─────────────────────────────────────────────
+app.use('/api', globalApiLimiter);
+app.use('/api/auth', authLimiter, authRouter);
+app.use('/api/files/upload', uploadLimiter);
+app.use('/api/files', filesRouter);
+app.use('/api/folders', foldersRouter);
+app.use('/api/settings', settingsRouter);
 
 // ── Unified Frontend Serving ──────────────────────────────────────────────────
 const frontendDist = path.resolve(__dirname, '../../frontend/dist');
