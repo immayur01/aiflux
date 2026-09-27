@@ -1034,15 +1034,18 @@ h4 { font-size: 0.9375rem; }
   background: transparent;
   border: none;
   outline: none;
-  color: #fff;
+  color: #000000;
+  caret-color: #000000;
+  font-weight: 600;
   font-size: 1rem;
   letter-spacing: 0.04em;
   min-width: 0;
   padding: 8px 8px;
 }
 .minimal-auth-input::placeholder {
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(0, 0, 0, 0.55);
   letter-spacing: normal;
+  font-weight: 500;
 }
 /* ── Specular Glass Enter Button ─────────────────────────────────────────── */
 .box.start-btn {
