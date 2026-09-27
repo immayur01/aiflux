@@ -35,7 +35,32 @@ app.use(
     crossOriginResourcePolicy: { policy: 'cross-origin' },
     crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
-    contentSecurityPolicy: false,
+    hsts: {
+      maxAge: 31536000, // 1 year
+      includeSubDomains: true,
+      preload: true,
+    },
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https://*.supabase.co', 'https://raw.githubusercontent.com'],
+        mediaSrc: ["'self'", 'blob:', 'data:', 'https://*.supabase.co'],
+        connectSrc: [
+          "'self'",
+          'https://*.supabase.co',
+          'wss://*.supabase.co',
+          'https://aiflux.in',
+          'https://www.aiflux.in',
+        ],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+      },
+    },
   })
 );
 
